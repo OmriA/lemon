@@ -3,9 +3,6 @@
  *
  * Copyright (c) 2018 ilammy
  */
-
-#define _GNU_SOURCE
-
 #include <linux/ftrace.h>
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
@@ -14,6 +11,9 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <linux/fs.h>
+#include <linux/init.h> 
+#include "lemon.h"
 
 MODULE_DESCRIPTION("Example module hooking clone() and execve() via ftrace");
 MODULE_LICENSE("GPL");
@@ -25,7 +25,9 @@ MODULE_LICENSE("GPL");
  */
 #define USE_FENTRY_OFFSET 0
 
-#define FORBIDDEN_WORD "shit"
+#define FORBIDDEN_WORD "****"
+
+char activate_flag = 1;
 
 /**
  * struct ftrace_hook - describes a single hook to install
@@ -243,6 +245,11 @@ static void censore_words(char *buf, long buf_length)
 {
 	unsigned int i, j;
 
+	if (!activate_flag)
+	{
+		return;
+	}
+
 	// Better implementation using memmem which somewhat I can't use. :/
 	// char *p_word;
 	// while ((p_word = memmem(buf, buf_length, FORBIDDEN_WORD, strlen(FORBIDDEN_WORD))) != NULL)
@@ -344,6 +351,21 @@ static asmlinkage long fh_sys_execve(const char __user *filename,
 	return ret;
 }
 
+long device_ioctl(struct file *file, 
+		unsigned int ioctl_num, 
+		/* number and param for ioctl */ unsigned long ioctl_param) 
+{ 
+	/* Switch according to the ioctl called */ 
+	switch (ioctl_num) 
+	{ 
+		case IOCTL_SWITCH_ON_OFF:
+			activate_flag = !activate_flag;
+			return 0;
+	}
+	return -1;
+}
+
+
 /*
  * x86_64 kernels have a special naming convention for syscall entry points in newer kernels.
  * That's what you end up with if an architecture has 3 (three) ABIs for system calls.
@@ -368,18 +390,25 @@ static asmlinkage long fh_sys_execve(const char __user *filename,
 		.original = (_original),	\
 	}
 
-static struct ftrace_hook demo_hooks[] = {
-	SYSCALL_HOOK("sys_clone",  fh_sys_clone,  &real_sys_clone),
-	SYSCALL_HOOK("sys_execve", fh_sys_execve, &real_sys_execve),
-};
+// static struct ftrace_hook demo_hooks[] = {
+// 	SYSCALL_HOOK("sys_clone",  fh_sys_clone,  &real_sys_clone),
+// 	SYSCALL_HOOK("sys_execve", fh_sys_execve, &real_sys_execve),
+// };
 
 static struct ftrace_hook func_to_hookp[] = {
 	SYSCALL_HOOK("sys_read", fh_sys_read, &real_sys_read)
 };
 
+struct file_operations fops = { .unlocked_ioctl = device_ioctl };
+
 static int fh_init(void)
 {
 	int err;
+
+	if (register_chrdev(DEVICE_MAJOR, DEVICE_NAME, &fops) == -1)
+	{
+		return -1;
+	}
 
 	err = fh_install_hooks(func_to_hookp, ARRAY_SIZE(func_to_hookp));
 	if (err)
@@ -393,6 +422,8 @@ static int fh_init(void)
 static void fh_exit(void)
 {
 	fh_remove_hooks(func_to_hookp, ARRAY_SIZE(func_to_hookp));
+
+	unregister_chrdev(DEVICE_MAJOR, DEVICE_NAME);
 
 	pr_info("module unloaded\n");
 }
