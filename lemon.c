@@ -4,6 +4,8 @@
  * Copyright (c) 2018 ilammy
  */
 
+#define _GNU_SOURCE
+
 #include <linux/ftrace.h>
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
@@ -240,6 +242,17 @@ static char *duplicate_filename(const char __user *filename)
 static void censore_words(char *buf, long buf_length)
 {
 	unsigned int i, j;
+
+	// Better implementation using memmem which somewhat I can't use. :/
+	// char *p_word;
+	// while ((p_word = memmem(buf, buf_length, FORBIDDEN_WORD, strlen(FORBIDDEN_WORD))) != NULL)
+	// {
+	// 	for (i = 0; i < strlen(FORBIDDEN_WORD); i++)
+	// 	{
+	// 		p_word[i] = '*';
+	// 	}
+	// }
+
 	for (i = 0; i < buf_length; i++)
 	{
 		// If the letter equals to the first letter it could be the forbidden word.
