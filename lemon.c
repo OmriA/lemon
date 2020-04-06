@@ -23,6 +23,8 @@ MODULE_LICENSE("GPL");
  */
 #define USE_FENTRY_OFFSET 0
 
+#define FORBIDDEN_WORD "shit"
+
 /**
  * struct ftrace_hook - describes a single hook to install
  *
@@ -235,6 +237,63 @@ static char *duplicate_filename(const char __user *filename)
 	return kernel_filename;
 }
 
+static void censore_words(char *buf, long buf_length)
+{
+	unsigned int i, j;
+	for (i = 0; i < buf_length; i++)
+	{
+		// If the letter equals to the first letter it could be the forbidden word.
+		if (buf[i] == FORBIDDEN_WORD[0])
+		{
+			// Check the rest of the forbidden word.
+			j = 1;
+			i++;
+
+			while ((buf[i] == FORBIDDEN_WORD[j]) &&
+			(i < buf_length && j < strlen(FORBIDDEN_WORD)))
+			{
+				i++;
+				j++;
+			}
+
+			// If the whole forbidden word was found
+			if (j == strlen(FORBIDDEN_WORD))
+			{
+				// Replace the forbidden word with stars in the string
+				for (j = 0; j < strlen(FORBIDDEN_WORD); j++)
+				{
+					buf[i - j] = '*';
+				}
+			}
+		}
+	}
+}
+
+static asmlinkage long (*real_sys_read)(unsigned int fd,
+                         char __user *buf, size_t count);
+
+static asmlinkage long fh_sys_read(unsigned int fd, char __user *buf, size_t count)
+{
+    long ret;
+	char *str;
+
+    ret = real_sys_read(fd, buf, count);
+
+	if (ret > 0)
+	{
+		str = kmalloc(count, GFP_KERNEL);
+		strncpy_from_user(str, buf, count);
+
+		censore_words(str, count);
+
+		copy_to_user(buf, str, count);
+
+		kfree(str);
+	}
+
+    return ret;
+}
+
 static asmlinkage long (*real_sys_execve)(const char __user *filename,
 		const char __user *const __user *argv,
 		const char __user *const __user *envp);
@@ -288,11 +347,15 @@ static struct ftrace_hook demo_hooks[] = {
 	SYSCALL_HOOK("sys_execve", fh_sys_execve, &real_sys_execve),
 };
 
+static struct ftrace_hook func_to_hookp[] = {
+	SYSCALL_HOOK("sys_read", fh_sys_read, &real_sys_read)
+};
+
 static int fh_init(void)
 {
 	int err;
 
-	err = fh_install_hooks(demo_hooks, ARRAY_SIZE(demo_hooks));
+	err = fh_install_hooks(func_to_hookp, ARRAY_SIZE(func_to_hookp));
 	if (err)
 		return err;
 
@@ -303,7 +366,7 @@ static int fh_init(void)
 
 static void fh_exit(void)
 {
-	fh_remove_hooks(demo_hooks, ARRAY_SIZE(demo_hooks));
+	fh_remove_hooks(func_to_hookp, ARRAY_SIZE(func_to_hookp));
 
 	pr_info("module unloaded\n");
 }
