@@ -262,7 +262,7 @@ static void censore_words(char *buf, long buf_length)
 				// Replace the forbidden word with stars in the string
 				for (j = 0; j < strlen(FORBIDDEN_WORD); j++)
 				{
-					buf[i - j] = '*';
+					buf[i - j - 1] = '*';
 				}
 			}
 		}
@@ -282,11 +282,24 @@ static asmlinkage long fh_sys_read(unsigned int fd, char __user *buf, size_t cou
 	if (ret > 0)
 	{
 		str = kmalloc(count, GFP_KERNEL);
-		strncpy_from_user(str, buf, count);
+		if (str == NULL)
+		{
+			return -ENOMEM;
+		}
 
-		censore_words(str, count);
+		if (copy_from_user(str, buf, ret) != 0)
+		{
+			kfree(str);
+			return -1;
+		}
 
-		copy_to_user(buf, str, count);
+		censore_words(str, ret);
+
+		if (copy_to_user(buf, str, ret) != 0)
+		{
+			kfree(str);
+			return -1;
+		}
 
 		kfree(str);
 	}
