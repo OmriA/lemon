@@ -8,7 +8,7 @@ int main()
 {
     int fd, ret_val;
 
-    fd = open("lemon", 0);
+    fd = open("/dev/lemon", O_RDONLY);
     if (fd < 0)
     {
         perror("Can't open device file: ");
